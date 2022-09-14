@@ -1,6 +1,7 @@
 #include "sourcemod"
 #include "sdktools"
 #include "sdkhooks"
+#include "clientprefs"
 #include "dhooks"
 #include "dhooks_macros"
 #include "regex"
@@ -38,6 +39,8 @@ enum OSType
 
 OSType gOSType;
 EngineVersion gEngineVer;
+
+Handle ghShowCookie;
 
 Handle ghLeafVisDraw,
 	ghRecomputeClipbrushes,
@@ -84,6 +87,7 @@ float gRefreshRate,
 
 bool gClipsPresent;
 bool gCommandsRegistered = false;
+bool gBShow[MAXPLAYERS + 1] = {false, ...};
 
 Leafvis_t gpVis[PVIS_COUNT];
 
@@ -120,6 +124,8 @@ public void OnPluginStart()
 		GetCollisionBSPData(gconf);
 	
 	delete gconf;
+
+	ghShowCookie = RegClientCookie("spc_show", "Enable or disable player clips",CookieAccess_Protected);
 }
 
 public void OnPluginEnd()
@@ -139,6 +145,18 @@ public void OnConfigsExecuted()
 
 	if(!gCommandsRegistered)
 		RegConsoleCommands();
+}
+
+public void OnClientCookiesCached(int client)
+{
+	char str[8];
+	GetClientCookie(client, ghShowCookie, str, sizeof(str));
+	if(strlen(str) == 0){
+		SetClientCookie(client, ghShowCookie, "0");
+		gBShow[client] = false;
+		return;
+	}
+	gBShow[client] = view_as<bool>(StringToInt(str));
 }
 
 public void RegConsoleCommands()
@@ -417,13 +435,16 @@ public Action SM_ShowClipBrushes(int client, int args)
 	{
 		gClientsToDraw.Erase(idx);
 		ReplyToCommand(client, "%T", "playerclips_disabled", client);
+		gBShow[client] = false;
 	}
 	else
 	{
 		gClientsToDraw.Push(GetClientUserId(client));
 		ReplyToCommand(client, "%T", "playerclips_enabled", client);
+		gBShow[client] = true;
 	}
-	
+
+	SetClientCookie(client, ghShowCookie, gBShow[client] ? "1" : "0");
 	return Plugin_Handled;
 }
 
