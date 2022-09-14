@@ -4,6 +4,7 @@
 #include "dhooks"
 #include "dhooks_macros"
 #include "regex"
+#include <multicolors>
 
 #define SNAME "[ShowPlayerClips] "
 #define GAMECONF_FILENAME "showplayerclips.games"
@@ -416,12 +417,12 @@ public Action SM_ShowClipBrushes(int client, int args)
 	if(idx != -1)
 	{
 		gClientsToDraw.Erase(idx);
-		ReplyToCommand(client, "%T", "playerclips_disabled", client);
+		CReplyToCommand(client, "%T", "playerclips_disabled", client);
 	}
 	else
 	{
 		gClientsToDraw.Push(GetClientUserId(client));
-		ReplyToCommand(client, "%T", "playerclips_enabled", client);
+		CReplyToCommand(client, "%T", "playerclips_enabled", client);
 	}
 	
 	return Plugin_Handled;
