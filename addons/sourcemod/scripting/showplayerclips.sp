@@ -1,6 +1,7 @@
 #include "sourcemod"
 #include "sdktools"
 #include "sdkhooks"
+#include "clientprefs"
 #include "dhooks"
 #include "dhooks_macros"
 #include "regex"
@@ -26,7 +27,7 @@ public Plugin myinfo =
 	name = "Show Player Clip Brushes",
 	author = "GAMMA CASE",
 	description = "Shows player clip brushes on map.",
-	version = "1.1.1",
+	version = "1.1.2",
 	url = "https://github.com/GAMMACASE/ShowPlayerClips"
 };
 
@@ -39,6 +40,8 @@ enum OSType
 
 OSType gOSType;
 EngineVersion gEngineVer;
+
+Handle ghShowCookie;
 
 Handle ghLeafVisDraw,
 	ghRecomputeClipbrushes,
@@ -57,7 +60,8 @@ ConVar gCvarCommands,
 	gCvarBeamAlpha,
 	gCvarBeamWidth,
 	gCvarBeamSearchDelta,
-	gCvarBeamMaterial;
+	gCvarBeamMaterial,
+	gCvarPersist;
 //	gCvarDynamicTimer;
 
 ArrayList gClientsToDraw;
@@ -86,16 +90,22 @@ float gRefreshRate,
 bool gClipsPresent;
 bool gCommandsRegistered = false;
 
+bool gLate;
+
 Leafvis_t gpVis[PVIS_COUNT];
 
 public void OnPluginStart()
 {
+	ghShowCookie = RegClientCookie("spc_show", "Enable or disable player clips", CookieAccess_Protected);
+	
 	gCvarCommands = CreateConVar("spc_commands", "sm_showbrushes;sm_showclips;sm_showclipbrushes;sm_showplayerclips;sm_scb;sm_spc", "Available command names for toggling clip brushes visibility. (NOTE: Write command names with \"sm_\" prefix, and don't use ! or any other symbol except A-Z, 0-9 or underline symbol \"_\", also server needs to be restarted to see changes!)")
 	gCvarBeamRefreshRate = CreateConVar("spc_beams_refresh_rate", "5.0", "Refresh rate at which beams will be drawn, don't set this to very low value! Map restart needed for this to take effect."/* (NOTE: Works only when \"spc_beams_refreshtime_dynamic\" set to 0)"*/, .hasMin = true, .min = 0.1, .hasMax = true, .max = TEMPENT_MAX_LIFETIME);
 	gCvarBeamAlpha = CreateConVar("spc_beams_alpha", "255", "Alpha value for beams, lower = more transperent. Map restart needed for this to take effect.", .hasMin = true, .hasMax = true, .max = 255.0);
 	gCvarBeamWidth = CreateConVar("spc_beams_width", "1.0", "Beams width, lower = less visible from distance.", .hasMin = true);
 	gCvarBeamSearchDelta = CreateConVar("spc_beams_search_delta", "0.5", "Leave this value as default or a bit smaller then default. Lower the value, more precision for beams, more beams drawn, lower the fps will be. Set to 0 to disable. Map restart needed for this to take effect.", .hasMin = true);
 	gCvarBeamMaterial = CreateConVar("spc_beams_material", "sprites/laserbeam.vmt", "Material used for beams. Server restart needed for this to take effect.");
+	//TODO: Add cvar config autoupdater
+	gCvarPersist = CreateConVar("spc_persist", "0", "Persist client preferences between map and server restarts.", .hasMin = true, .hasMax = true, .max = 1.0);
 	//TODO: Possibly a bad idea
 	//gCvarDynamicTimer = CreateConVar("spc_beams_refreshtime_dynamic", "0", "Use dynamically calculated refresh time, may speed up showing beams when toggling command.", .hasMin = true, .hasMax = true, .max = 1.0);
 	AutoExecConfig();
@@ -123,6 +133,11 @@ public void OnPluginStart()
 	delete gconf;
 }
 
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
+{
+	gLate = late;
+}
+
 public void OnPluginEnd()
 {
 	if(gTELimitAddress == Address_Null)
@@ -140,6 +155,31 @@ public void OnConfigsExecuted()
 
 	if(!gCommandsRegistered)
 		RegConsoleCommands();
+	
+	if(gLate)
+	{
+		gLate = false;
+		
+		for(int i = 1; i <= MaxClients; i++)
+		{
+			if(!IsClientInGame(i) || IsFakeClient(i) || !AreClientCookiesCached(i))
+				continue;
+			
+			OnClientCookiesCached(i);
+		}
+	}
+}
+
+public void OnClientCookiesCached(int client)
+{
+	if(IsFakeClient(client) || !gCvarPersist.BoolValue)
+		return;
+	
+	char buff[4];
+	GetClientCookie(client, ghShowCookie, buff, sizeof(buff));
+	
+	if(buff[0] != '\0' && StringToInt(buff) == 1)
+		gClientsToDraw.Push(GetClientUserId(client));
 }
 
 public void RegConsoleCommands()
@@ -424,6 +464,8 @@ public Action SM_ShowClipBrushes(int client, int args)
 		gClientsToDraw.Push(GetClientUserId(client));
 		CReplyToCommand(client, "%T", "playerclips_enabled", client);
 	}
+	
+	SetClientCookie(client, ghShowCookie, idx == -1 ? "1" : "0");
 	
 	return Plugin_Handled;
 }
